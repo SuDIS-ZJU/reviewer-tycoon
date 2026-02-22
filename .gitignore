@@ -35,3 +35,6 @@ examples/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Editor configurations
+*.code-workspace

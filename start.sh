@@ -1,5 +1,5 @@
 #!/bin/bash
-# start.sh - Easy startup script for i-am-your-reviewer
+# start.sh - Easy startup script for reviewer-tycoon
 
 set -e
 
