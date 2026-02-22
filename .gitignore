@@ -16,6 +16,7 @@ venv.bak/
 
 # Ignore sensitive config files
 .env
+system.prompt.old
 
 # Input & Output Data
 input/

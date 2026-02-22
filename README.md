@@ -37,10 +37,23 @@ pip install -r requirements.txt
 ```
 *(Dependencies include `streamlit`, `litellm`, `PyMuPDF`, `python-docx` among others).*
 
-### 2. Basic Configuration
-Before running, you can optionally configure your default API Key and Model Name directly in `app.py`, but it is highly recommended to paste them into the UI settings block upon launch for security.
+### 2. Configuration & API Keys (Critical)
+To keep your API secrets entirely safe and out of version control, this project uses `python-dotenv`.
 
-The system uses [LiteLLM](https://docs.litellm.ai/) under the hood, so it natively supports **OpenAI, Anthropic, Minimax, DeepSeek, GLM, etc.** without code changes.
+1. In the root directory, create a `.env` file (you can copy the provided `.env.example`):
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and fill in your actual configurations:
+   ```env
+   API_KEY=sk-api-your-secret-key-here
+   MODEL_NAME=openai/minimax-m2.5
+   BASE_URL=https://api.minimax.chat/v1
+   GROUP_ID=
+   ```
+   *Note: Because `.env` is listed in your `.gitignore`, your keys will NEVER be accidentally uploaded to GitHub!*
+
+The system uses [LiteLLM](https://docs.litellm.ai/) under the hood, so it natively supports **OpenAI, Anthropic, Minimax, DeepSeek, GLM, etc.** without any code changes.
 
 ### 3. Running the App
 Start the Streamlit arcade server using the provided start script:
@@ -101,7 +114,15 @@ You can safely close the browser during a long Mode 3 iteration; all intermediat
 ## 🤝 Dissermination & Extension
 This system is designed primarily as a standalone multi-agent playground. If you wish to extend it:
 1. **Extend File Types**: Add parsing logic in `utils.py`.
-2. **Integrate New APIs**: `litellm` naturally handles provider switching, simply change the `model` string in the UI.
+2. **Integrate New APIs**: `litellm` naturally handles provider switching; simply change the `MODEL_NAME` string in your `.env`.
 3. **Change Maximum Iterations**: Open `app.py` and modify the `max_iters` variable under the Mode 3 logic block.
 
 *(Disclaimer: Note that this system does not replace actual human scientific peer-review. AI generated reviews should be used strictly as co-pilots and sanity checkers prior to actual academic submission.)*
+
+---
+
+## 📝 TODO
+- [ ] Implement multi-paper batch processing pipeline.
+- [ ] Add explicit support for `DeepSeek-R1` API parameter passing.
+- [ ] Dynamically compute and expose API cost (USD) based on `litellm` pricing tracking.
+- [ ] Export visualization charts comparing Student Draft V1 vs Final Approved Review.
