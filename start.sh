@@ -21,16 +21,16 @@ echo "Activating virtual environment..."
 source "$VENV_DIR/bin/activate"
 
 echo "Installing dependencies..."
-pip install -r requirements.txt
+"$VENV_DIR/bin/pip" install -r requirements.txt
 
 # Create output directory for reviews
 mkdir -p "$APP_DIR/review_outputs"
 
 echo "Verifying LiteLLM status..."
-python3 -c "import litellm; print('✅ LiteLLM successfully loaded.')" || {
+"$VENV_DIR/bin/python3" -c "import litellm; print('✅ LiteLLM successfully loaded.')" || {
     echo "❌ Failed to load LiteLLM. Please check your dependencies."
     exit 1
 }
 
 echo "Starting Streamlit App..."
-python3 -m streamlit run app.py
+"$VENV_DIR/bin/python3" -m streamlit run app.py
