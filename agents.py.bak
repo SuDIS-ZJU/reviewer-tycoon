@@ -1,0 +1,126 @@
+import time
+import os
+from litellm import completion, token_counter
+
+# ------------------------------------------------------------------
+# DEFAULT SYSTEM PROMPTS (Fallback)
+# ------------------------------------------------------------------
+
+DEFAULT_STUDENT_PROMPT = """
+你是一个严谨的计算机科学领域的研究员。请严格按提供的模板结构提取论文的 Motivation, Methodology, Experiments，并给出客观打分。
+
+要求：
+1. 请阅读提供的论文相关部分，进行专业、细致、客观的评价。
+2. 评价内容必须有理有据，避免空泛的赞美或批评。
+3. 严格遵循提供的 Markdown/文本模板格式输出你的 Review。
+4. 输出的语言视模板要求而定，一般使用英语作正式 review，但这里为了演示可以支持中/英文双语灵活兼容。
+"""
+
+DEFAULT_TEACHER_PROMPT = """
+你是一个顶级学术会议的 Meta-Reviewer 或资深教授。你的任务不是重写 review，而是审视现有 review 的致命缺陷。
+请警惕 LLM 常见的幻觉（例如捏造论文中没有的实验数据）。
+
+要求：
+1. 仔细阅读 PDF 论文全文 and 提供的 Draft Review。
+2. 重点检查：是否认真评估了核心贡献？指出的问题是否客观存在？实验部分的评价是否准确？
+3. 请直接指出 review 哪一段不符合事实，或者存在幻觉，并给出具体的修改指令 (Actionable points)。
+4. 综合评估给出当前 Review 的质量等级（例如：Poor, Fair, Good, Excellent, Passed）。
+5. 如果你认为 Review 已经完善且符合要求，请务必在你的输出结尾明确写上 "Review Passed"，这将触发系统的迭代终止条件。
+"""
+
+DEFAULT_MODE3_PROMPT = """
+作为 Student Reviewer，在对抗模式中：
+你的导师（Teacher）指出了你上一版评审中的一些缺陷或幻觉。
+请仔细阅读导师的反馈，并生成一份新的、修正过的评审。
+不要只回复“我接受了你的意见”，请直接输出一份完整的最新版 Review，必须覆盖之前存在的缺陷。
+"""
+
+# ------------------------------------------------------------------
+# AGENT CLASSES
+# ------------------------------------------------------------------
+
+class BaseAgent:
+    def __init__(self, model_name: str, api_key: str, base_url: str = None, group_id: str = None):
+        self.model_name = model_name
+        self.api_key = api_key
+        self.base_url = base_url
+        self.group_id = group_id
+
+    def _call_llm_stream(self, messages: list):
+        """
+        Calls LiteLLM with stream=True and yields the text chunks.
+        """
+        if self.group_id:
+            os.environ["MINIMAX_GROUP_ID"] = self.group_id
+            
+        args = {
+            "model": self.model_name,
+            "messages": messages,
+            "api_key": self.api_key,
+            "stream": True
+        }
+        if self.base_url:
+            args["api_base"] = self.base_url
+            
+        try:
+            response_stream = completion(**args)
+            for chunk in response_stream:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        yield delta.content
+        except Exception as e:
+            yield f"\n\n**LiteLLM API Error**: {str(e)}"
+
+    def calculate_tokens(self, messages: list, response_text: str) -> dict:
+        """
+        Since we stream, we might not get token usage directly from the endpoint in a standard way across all providers.
+        We can use litellm's local token_counter as an accurate estimation.
+        """
+        try:
+            prompt_tokens = token_counter(model=self.model_name, messages=messages)
+            completion_tokens = token_counter(model=self.model_name, text=response_text)
+            return {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens
+            }
+        except Exception:
+            # Fallback if the token counter doesn't support the raw model name 
+            # (e.g., custom openai endpoints might fail exact tokenizer lookup)
+            return {
+                "prompt_tokens": len(str(messages)) // 4,
+                "completion_tokens": len(response_text) // 4,
+                "total_tokens": (len(str(messages)) + len(response_text)) // 4,
+                "note": "Estimated assuming 1 token ≈ 4 chars"
+            }
+
+class StudentReviewerAgent(BaseAgent):
+    def generate_review_stream(self, paper_text: str, template_text: str, system_prompt: str, previous_feedback: str = None, mode3_prompt: str = None) -> tuple:
+        messages = [
+            {"role": "system", "content": system_prompt.strip()}
+        ]
+        
+        user_prompt = f"以下是论文的核心内容：\n<paper_text>\n{paper_text}\n</paper_text>\n\n"
+        user_prompt += f"请按照以下模板结构进行评审：\n<template>\n{template_text}\n</template>\n\n"
+        
+        if previous_feedback:
+            mode3_instruction = mode3_prompt.strip() if mode3_prompt else DEFAULT_MODE3_PROMPT.strip()
+            user_prompt += f"\n{mode3_instruction}\n以下是导师的 Feedback：\n<teacher_feedback>\n{previous_feedback}\n</teacher_feedback>\n"
+            
+        messages.append({"role": "user", "content": user_prompt})
+        
+        return self._call_llm_stream(messages), messages
+
+class TeacherEvaluatorAgent(BaseAgent):
+    def evaluate_review_stream(self, paper_text: str, draft_review: str, system_prompt: str) -> tuple:
+        messages = [
+            {"role": "system", "content": system_prompt.strip()}
+        ]
+        
+        user_prompt = f"以下是原始论文的内容：\n<paper_text>\n{paper_text}\n</paper_text>\n\n"
+        user_prompt += f"以下是目前的评审草稿（Draft Review），请仔细评估并指出其中存在的问题、幻觉或逻辑漏洞，并给出具体的 action points：\n<draft_review>\n{draft_review}\n</draft_review>"
+        
+        messages.append({"role": "user", "content": user_prompt})
+        
+        return self._call_llm_stream(messages), messages
